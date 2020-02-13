@@ -1,0 +1,349 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # BOMBEO FOTOVOLTAICO
+
+# In[24]:
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from IPython.display import Image
+
+
+# ## Objetivo
+# 1. Encontral el vamor puntos de potencia para un panel fotovoltaico.
+# 
+# 2. Encontrar la rapidez del crecimiento del agua del pozo del cual se realizan las pruebas de bombeo fotovoltaico.
+
+# # Resultados de la evaluación del panel Guangyi Solar GYP-180M
+
+# $T (^{\circ}C) \pm 1\%$  & $I (A) \pm2\%$ & $V  (V) \pm0.8\%$ & $R  (\Omega) \pm1\%$ & $Irr^*  (mV) \pm0.5\%$ & $Irr (W/m^2) \pm 0.5\%$ 
+
+# In[44]:
+
+
+df=pd.read_csv("Datos tomados del panel.csv",sep=";")
+df["ErrorCorriente"]=[0.02*df.Corriente.iloc[i] for i in range(len(df))]
+df["ErrorVoltaje"]=[(0.8*10**-2)*df.Voltaje.iloc[i] for i in range(len(df))]
+df["I*V"]=[df.Corriente.iloc[i]*df.Voltaje.iloc[i] for i in range(len(df))]
+df["Error_I*V"]=[df.Corriente.iloc[i]*df.ErrorVoltaje.iloc[i]+
+                df.Voltaje.iloc[i]*df.ErrorCorriente.iloc[i] for i in range(len(df))]
+display(df)
+
+
+# De dicha tabla puedo inferir que si se analiza los puntos discretos obtenemos un máximo de I.V para: $I=5.27A$ $V=29.0V$ y resulta $152.830 \pm 4.279240 W$ (Esto solo con 3 cifras significativas). Podemos infere que a mayor producto de I.V también se obtienen un mayor error. Mejoremos este resultado con ayuda de Métodos Numéricos (Interpolación)
+
+# Uno de los objetivos es encontar el mayor producto de V.I ya que esto nos daría la potencia máxima. Pero lo que sucede es nosotros solo contamos con puntos discretos, es por ellos que se va a usar la técnica de interpolación numérica para hallar algunos puntos y así con estos nuevos puntos hallar el mayor valor de I.V
+
+# In[5]:
+
+
+fig, ax = plt.subplots()
+ax.set(xlabel='Voltaje(V)', ylabel='Corriente(A)',title="Gráfica de Voltaje vs Corriente para el panel Guangyi Solar GYP-180M")
+ax.plot(df.Voltaje,df.Corriente,".")
+ax.plot([29.0,29.0],[5.27,5.27],"*")
+ax.grid()
+
+
+# In[6]:
+
+
+print("Punto naranja:(",df.Voltaje.iloc[6],",",df.Corriente.iloc[6],")")
+
+
+# El punto naranja es supuestamente el que da mayor potencia. 
+
+# Para aplicar el método numérico no podría usar el método de Lagrange ya que esta función no la podemos modelar como una polinómica.
+
+# Uno de los algoritmos que sí se podría usar es el de Neville ya que este considera todos los puntos que están cercanos al que me interesa $Voltaje=(21.8,23.2,29.0,32.0,33.9)$ (se está tomando 2 puntos anteriores y 2 puntos posteriores). Voy a querer interpolar un valor de corriente para un valor de voltaje que pertenece al intervalo $[23.2,32.0]$ (Este es el intervalo más cercano al punto que que se mencionó anteriormente $(5.27,29.0)$).  
+
+# In[7]:
+
+
+def neville_martin(x,y,x0):
+    #  https://en.wikipedia.org/wiki/Neville%27s_algorithm
+    n=len(x)
+    P=np.zeros([n,n])
+    for i in range(n):
+        P[i][0]=y[i]
+    for i in range(1,n):
+        for j in range(1,i+1):
+            P[i][j]=((x0-x[i-j])*P[i][j-1]-(x0-x[i])*P[i-1][j-1])/(x[i]-x[i-j])
+    return P[n-1][n-1]
+
+
+# In[49]:
+
+
+print("Valores de voltaje que tomare para hacer mi interpolación")
+print(df.Voltaje.iloc[4:9].values)
+
+
+# In[51]:
+
+
+print("Esta es la predicción para el valor de Voltaje=30V")
+print(neville_martin(df.Voltaje.iloc[5:8].values,df.Corriente.iloc[5:8].values,30))
+
+
+# In[52]:
+
+
+puntosEnCOnsideracion=np.arange(df.Voltaje.iloc[5],df.Voltaje.iloc[7],0.1)
+print("Puntos en consideración para mi voltaje. Estoy tomando con una resolicón de 0.1V")
+print(puntosEnCOnsideracion)
+
+
+# In[54]:
+
+
+puntos_neville=[neville_martin(df.Voltaje.iloc[4:9].values,df.Corriente.iloc[4:9].values,i) 
+                for i in puntosEnCOnsideracion]
+
+# plt.plot(puntosEnCOnsideracion,puntos_neville)
+# print("La gráfica para puntos que se ha interpolado en el rango de Voltaje= 23.2 a 31.9")
+
+fig, ax = plt.subplots()
+ax.set(xlabel='Voltaje(V)', ylabel='Corriente(A)',title="La gráfica para puntos que se ha interpolado en el rango de Voltaje= 23.2 a 31.9")
+ax.plot(puntosEnCOnsideracion,puntos_neville,"-")
+# ax.plot([29.0,29.0],[5.27,5.27],"*")
+ax.grid()
+
+
+# In[57]:
+
+
+# plt.plot(puntosEnCOnsideracion*puntos_neville)
+# print("Gráficamente nos damos cuenta que sí existe un máximo.")
+# print(max(puntosEnCOnsideracion*puntos_neville))
+print("La máxima potencia es:",max(puntosEnCOnsideracion*puntos_neville))
+fig, ax = plt.subplots()
+ax.set(xlabel='Orden de la medicón', ylabel='Potencia(W)',title="Gráficamente nos damos cuenta que sí existe un máximo.")
+ax.plot(puntosEnCOnsideracion*puntos_neville)
+ax.grid()
+
+
+# Se puede observar que la maxíma potencia usando el método de Neville fue para una $I=5.072A$ y $V=30.3V$
+
+# In[60]:
+
+
+dic={"CorrienteNumerica":puntos_neville,"VoltajeNumerico":puntosEnCOnsideracion,"PotenciaNumerica":puntosEnCOnsideracion*puntos_neville}
+df1=pd.DataFrame(dic)
+print("Tabla en la que se encuentra la máxima potencia.")
+display(df1.sort_values("PotenciaNumerica",ascending=False).head())
+
+
+# In[62]:
+
+
+print("El máximo está dado para la posición 71.")
+
+
+# 
+# Ahora el máximo es $153.681W$ y no es el valor del punto naranja $152.830𝑊$ que se halló anteriormente cuando solo se consideró puntos discretos.
+
+# Realizamos todos estos cálculos para así obtener el mayor valor de $iv$ (potencia). Ya que para esta potencia es que se busca qie trabaje mi panel para que así se le transmita mayor energía por unidad de tiempo a mi bomba fotovoltaica. 
+
+# Calculemos el error para el valor $153.681W$.
+
+# In[63]:
+
+
+ErrorCorriente=0.02*df1.CorrienteNumerica.iloc[71]
+ErrorVoltaje=(0.8*10**-2)*df1.VoltajeNumerico.iloc[71]
+Error=ErrorCorriente*df1.VoltajeNumerico.iloc[71]+ErrorVoltaje*df1.CorrienteNumerica.iloc[71]
+print("Error para mi potencia máxima obtenida numéricamente:",Error)
+
+
+# In[64]:
+
+
+print("Entonces el máximo valor de la potencia con su respectivo error es:")
+print(round(max(puntosEnCOnsideracion*puntos_neville),3),"+-",round(Error,3))
+
+
+# # Abatimiento
+# Después que se realizaban los experimentos de sacado de agua, tabién se tenía que hacer el estudio de qué tan rápido se recupera el pozo. Es decir qué tanto aumenta el nivel del pozo a medida que pasa el tiempo. (Abatimiento=Profundidad del nivel de agua.) Una medida es tomada desde el suelo hasta el nivel del agua. A medida que pasa el tiempo el nivel del agua aumenta, por ende la medida del abatimiento va a disminuir.
+
+# In[65]:
+
+
+dfAbatimineto=pd.read_csv("Abatimiento.csv",sep=";")
+print("Tiempo en horas y Abatimiento en metros.")
+display(dfAbatimineto)
+
+
+# Nos damos cuenta que para nuestro problema tenemos el paso variable. Tomemos en consideración una media de estos pasos.
+
+# In[68]:
+
+
+H=[dfAbatimineto.t.iloc[i+1]-dfAbatimineto.t.iloc[i] for i in range(len(dfAbatimineto)-1)]
+print("Tamaño de los pasos:")
+print(H)
+
+
+# In[70]:
+
+
+pasoMedio=np.mean(H)
+print("El paso medio es:",pasoMedio,"Voltios")
+
+
+# In[71]:
+
+
+fig, ax = plt.subplots()
+ax.set(xlabel='Tiempo(horas)', ylabel='Abatimiento(m)',title="Comportamiento del nivel de agua del pozo con respecto al tiempo.")
+ax.plot(dfAbatimineto.t,dfAbatimineto.Abatimiento,"r*")
+# ax.plot([29.0,29.0],[5.27,5.27],"*")
+ax.grid()
+
+
+# Supongamos que lo que se busca es qué tan rápido aumenta el nivel de agua del pozo. Es decir lo que se busca es calcular derivada de la profundidad con respecto del tiempo. Se buscar: $d Produnfidad / dt$. Ya que no se tienen una función pero sí puntos discretos se podría calcular dicha derivada con diferenciación numérica.
+
+# In[72]:
+
+
+T=dfAbatimineto.t.values
+V=dfAbatimineto.Abatimiento.values
+
+
+# In[73]:
+
+
+Image(filename="adelante.PNG")
+
+
+# In[74]:
+
+
+list_1_adelante=10*[None]
+n=len(T)
+h=pasoMedio
+for i in range(n-1):
+    list_1_adelante[i]=(V[i+1]-V[i])/h
+list_1_adelante
+
+
+# In[75]:
+
+
+Image(filename="atras.PNG")
+
+
+# In[76]:
+
+
+list_1_atras=10*[None]
+for i in range(1,n):
+    list_1_atras[i]=(V[i]-V[i-1])/h
+list_1_atras  
+
+
+# In[77]:
+
+
+Image(filename="2PuntosAdelante.PNG")
+
+
+# In[78]:
+
+
+lis_3_puntos_hacia_adelante=10*[None]
+for i in range(0,n-2):
+    lis_3_puntos_hacia_adelante[i]=(-3*V[i]+4*V[i+1]-V[i+2])/(2*h)
+lis_3_puntos_hacia_adelante  
+
+
+# In[79]:
+
+
+Image(filename="3PuntosAtras.PNG")
+
+
+# In[80]:
+
+
+List3PuntosHaciaAtras=10*[None]
+for i in range(2,n):
+    List3PuntosHaciaAtras[i]=(V[i-2]-4*V[i-1]+3*V[i])/(2*h)
+List3PuntosHaciaAtras 
+
+
+# In[81]:
+
+
+Image(filename="2puntos_.PNG")
+
+
+# In[82]:
+
+
+Lista2PuntosCentrados=10*[None]
+for i in range(1,n-1):
+    Lista2PuntosCentrados[i]=(V[i+1]-V[i-1])/(2*h)
+Lista2PuntosCentrados   
+
+
+# In[83]:
+
+
+Image(filename="4puntos.PNG")
+
+
+# In[84]:
+
+
+Lista4PuntosCentrada=[None]*10
+for i in range(2,n-2):
+    Lista4PuntosCentrada[i]=(V[i-2]-8*V[i-1]+8*V[i+1]-V[i+2])/(12*h)
+Lista4PuntosCentrada  
+
+
+# In[85]:
+
+
+dic={"f'_adelante_un_paso":list_1_adelante, "f'_un_paso_atras":list_1_atras,
+     "f'_2Puntos":Lista2PuntosCentrados,
+    "f'_3Puntos_adelante":lis_3_puntos_hacia_adelante,"f'_3Puntos_atras":List3PuntosHaciaAtras,
+    "f'_4Puntos":Lista4PuntosCentrada}
+DF=pd.DataFrame(dic)
+DF
+
+
+# In[86]:
+
+
+meadias=[DF.iloc[i].mean() for i in range(n)]
+meadias
+
+
+# In[87]:
+
+
+stand=[DF.iloc[i].std() for i in range(n)]
+stand
+
+
+# In[88]:
+
+
+DF["Mean"]=meadias
+DF["DesEsta"]=stand
+DF
+
+
+# Tomando la media de todas las medias obtenidas:
+
+# In[89]:
+
+
+print("La rapidez con la que aumenta el nivel de agua en el pozo en promedia es (metros/hora): ")
+print(-DF.Mean.mean())
+
+
+# Es muy importante saber este valor ya que con ello tenemos claro dentro de cuanto tiempo podemos volver a realizar el experimentos (tomar mediciones).
